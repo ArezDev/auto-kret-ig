@@ -98,11 +98,22 @@ async function relogCokis(index) {
 
   try {
     const page = await browser.newPage();
+
+    page.on('dialog', async dialog => {
+        await dialog.accept(); // auto klik “Leave”
+    });
+
+    await page.evaluateOnNewDocument(() => {
+        window.onbeforeunload = null;
+        window.addEventListener('beforeunload', e => {
+            e.stopImmediatePropagation();
+        }, true);
+    });
+
     page.setDefaultNavigationTimeout(0);
-    // Enable request interception
     await page.setRequestInterception(true);
-    await delay(2000);
     await page.setUserAgent('Mozilla/5.0 (Linux; Android 10; vivo 1935 Build/QP1A.190711.020; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/142.0.7444.56 Mobile Safari/537.36 Instagram 404.0.0.48.76 Android (29/10; 480dpi; 1080x2115; vivo; vivo 1935; 1935; qcom; en_US; 813747913; IABMV/1)');
+    await delay(2000);
 
     // Block CSS and video
     page.on('request', (request) => {
@@ -116,24 +127,8 @@ async function relogCokis(index) {
     });
     await delay(2000);
 
-    await page.goto('https://www.instagram.com/accounts/emailsignup/?hl=id', { waitUntil: 'domcontentloaded' });
-    await delay(15000);
-
-    return;
-
-    // debug setcokis //
-    // await page.goto('https://www.instagram.com/?hl=id', { waitUntil: 'domcontentloaded' });
-    // await delay(5000);
-
-    // const domainCokis = '.instagram.com';
-    // const connectCokis = parseCookies(`datr=vUkAaRya8COaLpXaqN4W4ato; ig_did=2339D7C2-204F-4A7C-8A1A-A062C88BA01F; wd=898x965; mid=aQBJwAALAAHunfvOYnawPzsX-3_z; ig_nrcb=1; csrftoken=fC9YqX75fxwctsM7ZrB0rgWT4YenaXkR; ds_user_id=78042758010; sessionid=78042758010%3AxC0HG8a4lqmb0V%3A21%3AAYiGBoLpjRA38fySbh_sYEeh-tgH4A-IAmXu-0gjSg; rur="HIL\/05478042758010\/0541793162643:01fe0f9f07999ae046b0d4b78ad32ea013bf835c996fa3e3906b6f7a1743f8494684080c"; test_cookie=CheckForPermission;`,
-    //   domainCokis
-    // );
-    // //console.log(connectCokis);
-    // await page.setCookie(...connectCokis);
-
-    // await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2' });
-    // await delay(5000);
+    await page.goto('https://www.instagram.com/accounts/signup/email/', { waitUntil: 'domcontentloaded' });
+    await delay(5000);
 
     // Start kret igeh:
     const name = await getName('JP');
@@ -142,31 +137,81 @@ async function relogCokis(index) {
     const email = `${username.toLowerCase()}@sohibmail.uk`;
     const password = `JAZZ2026`;
 
-    await page.evaluate((email, fullname, username, password) => {
+    await page.evaluate((email) => {
       const setNativeValue = (el, val) => {
         const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
         setter.call(el, val);
         el.dispatchEvent(new Event('input', { bubbles: true }));
       };
-      const emailEl = document.querySelector('input[name="emailOrPhone"]');
-      const passEl = document.querySelector('input[name="password"]');
-      const usernameEl = document.querySelector('input[name="username"]');
-      const fullNameEl = document.querySelector('input[name="fullName"]');
-      if (usernameEl && fullNameEl && emailEl) {
+      const emailEl = document.querySelector('input[name="email"]');
+      if (emailEl) {
         setNativeValue(emailEl, email);
-        setNativeValue(passEl, password);
-        setNativeValue(fullNameEl, fullname);
-        setNativeValue(usernameEl, username.toLowerCase());
       }
-    }, email, fullname, username, password);
+    }, email);
     await delay(5000);
+
     // Next:
     await page.evaluate(() => {
       const btn = [...document.querySelectorAll('button')]
-        .find(b => /sign up|daftar|登録する/i.test(b.textContent));
+        .find(b => /next|selanjutnya/i.test(b.textContent));
       btn?.click();
     });
-    await delay(5000);
+    await delay(10000);
+
+    const fetchEmail = await axios.get(`https://email.balanesohib.eu.org/api/get/${email}`);
+    const code = fetchEmail?.data?.mails[0]?.subject.match(/(\d+)/)[1];
+
+    // Input code:
+    await page.evaluate(async (code) => {
+      const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+      const setNativeValue = (el, val) => {
+        try {
+          const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+          if (descriptor && descriptor.set) {
+            descriptor.set.call(el, val);
+          } else {
+            el.value = val; // fallback aman
+          }
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        } catch (e) {
+          console.error('setNativeValue failed:', e);
+          el.value = val; // fallback ekstra
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      };
+      const inputCode = document.querySelector('input[name="emailConfirmationCode"]');
+      setNativeValue(inputCode, code);
+      await delay(5000);
+      const btn = [...document.querySelectorAll('button')]
+        .find(b => /next|selanjutnya|次へ/i.test(b.textContent));
+      btn?.click();
+    }, code);
+    await delay(10000);
+
+    // Wait for the full name & password fields
+    await page.waitForSelector('input[name="fullName"]', { visible: true });
+    await page.waitForSelector('input[name="password"]', { visible: true });
+
+    await page.evaluate(async (fullname, password) => {
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const setNativeValue = (el, val) => {
+            const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+            if (descriptor && descriptor.set) descriptor.set.call(el, val);
+            else el.value = val;
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
+        const inputfFullname = document.querySelector('input[name="fullName"]');
+        const inputfPassword = document.querySelector('input[name="password"]');
+        setNativeValue(inputfFullname, fullname);
+        setNativeValue(inputfPassword, password);
+        await delay(5000);
+      const btn = [...document.querySelectorAll('button')]
+        .find(b => /next|selanjutnya|次へ/i.test(b.textContent));
+      btn?.click();
+    }, fullname, password);
+
+    await delay(10000);
 
     // Birth date:
     await page.evaluate(async () => {
@@ -193,61 +238,27 @@ async function relogCokis(index) {
       const year = document.getElementsByTagName('select')[2];
 
       setNativeValue(month, Math.floor(Math.random() * 12) + 1);
-      await sleep(300);
+      await sleep(500);
 
       setNativeValue(day, Math.floor(Math.random() * 28) + 1);
-      await sleep(300);
+      await sleep(500);
 
       setNativeValue(year, Math.floor(Math.random() * (2000 - 1998 + 1)) + 1998);
-      await sleep(300);
-    });
-    // Next:
-    await page.evaluate(() => {
+      await sleep(2000);
+      //Next
       const btn = [...document.querySelectorAll('button')]
         .find(b => /next|selanjutnya|次へ/i.test(b.textContent));
       btn?.click();
     });
     await delay(10000);
 
-    const fetchEmail = await axios.get(`https://email.balanesohib.eu.org/api/get/${email}`);
-    const code = fetchEmail?.data?.mails[0]?.subject.match(/(\d+)/)[1];
-    //console.log(code);
-
-    await page.evaluate((code) => {
-      const setNativeValue = (el, val) => {
-        try {
-          const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
-          if (descriptor && descriptor.set) {
-            descriptor.set.call(el, val);
-          } else {
-            el.value = val; // fallback aman
-          }
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-        } catch (e) {
-          console.error('setNativeValue failed:', e);
-          el.value = val; // fallback ekstra
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-      };
-      const inputCode = document.querySelector('input[name="email_confirmation_code"]');
-      setNativeValue(inputCode, code);
-    }, code);
-    await delay(17000);
-    // Submit OTP daftar igeh:
+    // Langsung Next:
     await page.evaluate(() => {
-      const buttons = Array.from(document.querySelectorAll('div[role="button"]'));
-      const nextBtn = buttons.find(b => {
-        const text = b.textContent.trim().toLowerCase();
-        return text === 'next' || text === 'selanjutnya' || text === '次へ';
-      });
-
-      if (nextBtn) {
-        nextBtn.click();
-      } else {
-        console.error('❌ Button "Next"/"Selanjutnya" not found');
-      }
+      const btn = [...document.querySelectorAll('button')]
+        .find(b => /next|selanjutnya|次へ/i.test(b.textContent));
+      btn?.click();
     });
-    await delay(25000);
+    await delay(15000);
 
     // -- Set 2 factor -- //
     const get2Factor = async () => {
@@ -340,7 +351,8 @@ async function relogCokis(index) {
 
         // Ambil semua cookies dari konteks browser
         const cookies = await page.browserContext().cookies();
-        const cokisString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+        const instaCookies = cookies.filter(c => c.domain.includes('.instagram.com'));
+        const cokisString = instaCookies.map(c => `${c.name}=${c.value}`).join('; ');
 
         // Cek apakah akun terkena checkpoint / suspended
         if (currentUrl.includes('suspended') || currentUrl.includes('checkpoint')) {
@@ -364,11 +376,17 @@ async function relogCokis(index) {
 
   } catch (err) {
     console.error(`${waktu()}[${index + 1}] : ERROR ->`, err.message);
-    // await browser.close().catch(() => {});
-    // await delay(3000);
+    try {
+        await page.close({ runBeforeUnload: true });
+    } catch {}
+    await browser.close().catch(() => {});
+    await delay(2000);
   } finally {
-    // await browser.close().catch(() => {});
-    // await delay(3000);
+    try {
+        await page.close({ runBeforeUnload: true });
+    } catch {}
+    await browser.close().catch(() => {});
+    await delay(2000);
   }
 };
 
@@ -408,39 +426,29 @@ const parseCookies = (raw, domain) => {
 };
 
 // Processing...
+
 (async () => {
-
-  const DialogMaxBrowser = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  const askBrowser = () => {
+  // --- Input MAX_PARALLEL ---
+  const askQuestion = (question) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout
+    });
     return new Promise(resolve => {
-      DialogMaxBrowser.question('Max browser? ', answer => {
+      rl.question(question, answer => {
+        rl.close();
         resolve(answer);
       });
     });
   };
 
-  const MAX_PARALLEL = await askBrowser();
-  DialogMaxBrowser.close();
+  const MAX_PARALLEL = parseInt(await askQuestion('Max browser? '), 10);
+  const MAX_CREATE = parseInt(await askQuestion('Ngekrit peng piro? '), 10);
 
-  const DialogMaxCreate = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-  });
-
-  const askCreate = () => {
-    return new Promise(resolve => {
-      DialogMaxCreate.question('Ngekrit peng piro? ', answer => {
-        resolve(answer);
-      });
-    });
-  };
-
-  const MAX_CREATE = await askCreate();
-  DialogMaxCreate.close();
+  if (isNaN(MAX_PARALLEL) || isNaN(MAX_CREATE)) {
+    console.error('[!] Input tidak valid.');
+    process.exit(1);
+  }
 
   let index = 0;
 
@@ -465,5 +473,5 @@ const parseCookies = (raw, domain) => {
     await runNextBatch();
   }
 
-  console.log('✅ Reg done...!');
+  console.log('\n✅ REG done........!\n');
 })();
